@@ -59,18 +59,33 @@ export function renderWikiLinks(
   );
 }
 
-// Debounce function for auto-save
+// Debounce function for auto-save with cancel support
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface DebouncedFunction<T extends (...args: any[]) => any> {
+  (...args: Parameters<T>): void;
+  cancel: () => void;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function debounce<T extends (...args: any[]) => any>(
   func: T,
   wait: number
-): (...args: Parameters<T>) => void {
+): DebouncedFunction<T> {
   let timeout: NodeJS.Timeout | null = null;
   
-  return function (...args: Parameters<T>) {
+  const debouncedFn = function (...args: Parameters<T>) {
     if (timeout) {
       clearTimeout(timeout);
     }
     timeout = setTimeout(() => func(...args), wait);
+  } as DebouncedFunction<T>;
+  
+  debouncedFn.cancel = () => {
+    if (timeout) {
+      clearTimeout(timeout);
+      timeout = null;
+    }
   };
+  
+  return debouncedFn;
 }

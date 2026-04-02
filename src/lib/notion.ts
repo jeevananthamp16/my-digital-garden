@@ -37,17 +37,23 @@ export async function getNotes(): Promise<Note[]> {
       sorts: [{ timestamp: 'last_edited_time', direction: 'descending' }],
     });
 
-    return response.results.map((page: any) => ({
-      id: page.id,
-      title: page.properties.Name?.title?.[0]?.plain_text || 'Untitled',
-      content: page.properties.Content?.rich_text?.[0]?.plain_text || '',
-      folder: page.properties.Folder?.select?.name || 'Inbox',
-      tags: page.properties.Tags?.multi_select?.map((t: any) => t.name) || [],
-      isPublic: page.properties.Public?.checkbox || false,
-      links: page.properties.Links?.relation?.map((r: any) => r.id) || [],
-      createdAt: page.created_time,
-      updatedAt: page.last_edited_time,
-    }));
+    return response.results.map((page: any) => {
+      // Join all rich_text chunks for content (handles 2000 char limit)
+      const contentRichText = page.properties.Content?.rich_text || [];
+      const content = contentRichText.map((t: any) => t.plain_text).join('');
+      
+      return {
+        id: page.id,
+        title: page.properties.Name?.title?.[0]?.plain_text || 'Untitled',
+        content,
+        folder: page.properties.Folder?.select?.name || 'Inbox',
+        tags: page.properties.Tags?.multi_select?.map((t: any) => t.name) || [],
+        isPublic: page.properties.Public?.checkbox || false,
+        links: page.properties.Links?.relation?.map((r: any) => r.id) || [],
+        createdAt: page.created_time,
+        updatedAt: page.last_edited_time,
+      };
+    });
   } catch (error) {
     console.error('Error fetching notes:', error);
     return [];
@@ -477,37 +483,9 @@ export async function getPublicNote(id: string): Promise<Note | null> {
       return null; // Note exists but is not public
     }
     
-    // Get page content (blocks)
-    const blocks = await notionClient.blocks.children.list({ block_id: id });
-    const content = blocks.results
-      .map((block: any) => {
-        if (block.type === 'paragraph') {
-          return block.paragraph.rich_text.map((t: any) => t.plain_text).join('');
-        }
-        if (block.type === 'heading_1') {
-          return `# ${block.heading_1.rich_text.map((t: any) => t.plain_text).join('')}`;
-        }
-        if (block.type === 'heading_2') {
-          return `## ${block.heading_2.rich_text.map((t: any) => t.plain_text).join('')}`;
-        }
-        if (block.type === 'heading_3') {
-          return `### ${block.heading_3.rich_text.map((t: any) => t.plain_text).join('')}`;
-        }
-        if (block.type === 'bulleted_list_item') {
-          return `- ${block.bulleted_list_item.rich_text.map((t: any) => t.plain_text).join('')}`;
-        }
-        if (block.type === 'numbered_list_item') {
-          return `1. ${block.numbered_list_item.rich_text.map((t: any) => t.plain_text).join('')}`;
-        }
-        if (block.type === 'code') {
-          return `\`\`\`${block.code.language}\n${block.code.rich_text.map((t: any) => t.plain_text).join('')}\n\`\`\``;
-        }
-        if (block.type === 'quote') {
-          return `> ${block.quote.rich_text.map((t: any) => t.plain_text).join('')}`;
-        }
-        return '';
-      })
-      .join('\n\n');
+    // Read content from Content property (rich_text can be chunked)
+    const contentRichText = page.properties.Content?.rich_text || [];
+    const content = contentRichText.map((t: any) => t.plain_text).join('');
 
     return {
       id: page.id,

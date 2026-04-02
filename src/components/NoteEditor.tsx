@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Save,
@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { useNotesStore } from '@/lib/store';
 import { Note } from '@/lib/notion';
-import { debounce } from '@/lib/utils';
+import { debounce, DebouncedFunction } from '@/lib/utils';
 import clsx from 'clsx';
 
 // Dynamic import for MDEditor to avoid SSR issues
@@ -43,6 +43,7 @@ export function NoteEditor({ folders, tags, onSave, onDelete }: NoteEditorProps)
   const { getSelectedNote, isEditing, setIsEditing, updateNoteInStore } = useNotesStore();
   const note = getSelectedNote();
   const editorRef = useRef<HTMLDivElement>(null);
+  const noteIdRef = useRef<string | null>(null);
   
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -54,6 +55,14 @@ export function NoteEditor({ folders, tags, onSave, onDelete }: NoteEditorProps)
   const [newTag, setNewTag] = useState('');
   const [showTagInput, setShowTagInput] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+
+  // Memoize textarea props to prevent unnecessary re-renders
+  const textareaProps = useMemo(() => ({
+    autoComplete: "off" as const,
+    autoCorrect: "off" as const,
+    autoCapitalize: "off" as const,
+    spellCheck: false,
+  }), []);
 
   // Compress and convert image to base64
   const compressImage = useCallback(async (file: File, maxWidth = 1200, quality = 0.8): Promise<string> => {
@@ -121,8 +130,8 @@ export function NoteEditor({ folders, tags, onSave, onDelete }: NoteEditorProps)
           setContent(prev => prev + imageMarkdown);
           
           // Trigger auto-save
-          if (note && isEditing) {
-            debouncedSave({ content: content + imageMarkdown });
+          if (note && isEditing && debouncedSaveRef.current) {
+            debouncedSaveRef.current(note.id, { content: content + imageMarkdown });
           }
         } catch (error) {
           console.error('Failed to process image:', error);
@@ -150,8 +159,8 @@ export function NoteEditor({ folders, tags, onSave, onDelete }: NoteEditorProps)
       const imageMarkdown = `\n![${file.name}](${imageData})\n`;
       setContent(prev => prev + imageMarkdown);
       
-      if (note && isEditing) {
-        debouncedSave({ content: content + imageMarkdown });
+      if (note && isEditing && debouncedSaveRef.current) {
+        debouncedSaveRef.current(note.id, { content: content + imageMarkdown });
       }
     } catch (error) {
       console.error('Failed to process dropped image:', error);
@@ -165,55 +174,67 @@ export function NoteEditor({ folders, tags, onSave, onDelete }: NoteEditorProps)
     e.preventDefault();
   }, []);
 
-  // Load note data when selection changes
+  // Load note data when selection changes (only when note ID actually changes)
   useEffect(() => {
-    if (note) {
-      setTitle(note.title);
-      setContent(note.content);
-      setFolder(note.folder);
-      setSelectedTags(note.tags);
-      setIsPublic(note.isPublic);
-    } else {
-      setTitle('');
-      setContent('');
-      setFolder('Inbox');
-      setSelectedTags([]);
-      setIsPublic(false);
+    const currentNoteId = note?.id || null;
+    
+    // Only update state if note ID actually changed
+    if (currentNoteId !== noteIdRef.current) {
+      noteIdRef.current = currentNoteId;
+      
+      if (note) {
+        setTitle(note.title);
+        setContent(note.content);
+        setFolder(note.folder);
+        setSelectedTags(note.tags);
+        setIsPublic(note.isPublic);
+      } else {
+        setTitle('');
+        setContent('');
+        setFolder('Inbox');
+        setSelectedTags([]);
+        setIsPublic(false);
+      }
     }
-  }, [note?.id]);
+  }, [note?.id, note?.title, note?.content, note?.folder, note?.tags, note?.isPublic]);
 
-  // Auto-save with debounce
-  const debouncedSave = useCallback(
-    debounce(async (updates: Partial<Note>) => {
-      if (!note) return;
+  // Auto-save with debounce - use ref to persist between renders
+  const debouncedSaveRef = useRef<DebouncedFunction<(noteId: string, updates: Partial<Note>) => Promise<void>> | null>(null);
+  
+  // Initialize debouncedSave once
+  useEffect(() => {
+    debouncedSaveRef.current = debounce(async (noteId: string, updates: Partial<Note>) => {
       setIsSaving(true);
       try {
         await onSave(updates);
-        updateNoteInStore(note.id, updates);
+        updateNoteInStore(noteId, updates);
       } finally {
         setIsSaving(false);
       }
-    }, 1000),
-    [note?.id, onSave]
-  );
+    }, 1000);
+    
+    return () => {
+      debouncedSaveRef.current?.cancel();
+    };
+  }, [onSave, updateNoteInStore]);
 
   // Handle content changes with auto-save
-  const handleContentChange = (value: string | undefined) => {
+  const handleContentChange = useCallback((value: string | undefined) => {
     const newContent = value || '';
     setContent(newContent);
-    if (note && isEditing) {
-      debouncedSave({ content: newContent });
+    if (note && isEditing && debouncedSaveRef.current) {
+      debouncedSaveRef.current(note.id, { content: newContent });
     }
-  };
+  }, [note?.id, isEditing]);
 
   // Handle title changes
-  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTitleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const newTitle = e.target.value;
     setTitle(newTitle);
-    if (note && isEditing) {
-      debouncedSave({ title: newTitle });
+    if (note && isEditing && debouncedSaveRef.current) {
+      debouncedSaveRef.current(note.id, { title: newTitle });
     }
-  };
+  }, [note?.id, isEditing]);
 
   // Save all changes
   const handleSave = async () => {
@@ -237,28 +258,28 @@ export function NoteEditor({ folders, tags, onSave, onDelete }: NoteEditorProps)
   };
 
   // Toggle tag
-  const toggleTag = (tag: string) => {
+  const toggleTag = useCallback((tag: string) => {
     const newTags = selectedTags.includes(tag)
       ? selectedTags.filter((t) => t !== tag)
       : [...selectedTags, tag];
     setSelectedTags(newTags);
-    if (note && isEditing) {
-      debouncedSave({ tags: newTags });
+    if (note && isEditing && debouncedSaveRef.current) {
+      debouncedSaveRef.current(note.id, { tags: newTags });
     }
-  };
+  }, [selectedTags, note?.id, isEditing]);
 
   // Add new tag
-  const addNewTag = () => {
+  const addNewTag = useCallback(() => {
     if (newTag && !selectedTags.includes(newTag)) {
       const newTags = [...selectedTags, newTag];
       setSelectedTags(newTags);
       setNewTag('');
       setShowTagInput(false);
-      if (note && isEditing) {
-        debouncedSave({ tags: newTags });
+      if (note && isEditing && debouncedSaveRef.current) {
+        debouncedSaveRef.current(note.id, { tags: newTags });
       }
     }
-  };
+  }, [newTag, selectedTags, note?.id, isEditing]);
 
   if (!note) {
     return (
@@ -285,7 +306,7 @@ export function NoteEditor({ folders, tags, onSave, onDelete }: NoteEditorProps)
               value={folder}
               onChange={(e) => {
                 setFolder(e.target.value);
-                if (isEditing) debouncedSave({ folder: e.target.value });
+                if (isEditing && note && debouncedSaveRef.current) debouncedSaveRef.current(note.id, { folder: e.target.value });
               }}
               disabled={!isEditing}
               className="bg-transparent text-sm text-gray-700 dark:text-gray-300 border-none outline-none cursor-pointer disabled:cursor-default"
@@ -301,10 +322,10 @@ export function NoteEditor({ folders, tags, onSave, onDelete }: NoteEditorProps)
           {/* Visibility toggle */}
           <button
             onClick={() => {
-              if (!isEditing) return;
+              if (!isEditing || !note) return;
               const newValue = !isPublic;
               setIsPublic(newValue);
-              debouncedSave({ isPublic: newValue });
+              if (debouncedSaveRef.current) debouncedSaveRef.current(note.id, { isPublic: newValue });
             }}
             disabled={!isEditing}
             className={clsx(
