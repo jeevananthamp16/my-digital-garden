@@ -1,3 +1,5 @@
+export const runtime = 'edge';
+
 import { NextResponse } from 'next/server';
 import { getNote, updateNote, deleteNote } from '@/lib/notion';
 
