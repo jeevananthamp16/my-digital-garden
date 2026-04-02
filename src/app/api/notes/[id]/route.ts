@@ -45,16 +45,16 @@ export async function PATCH(
     
     if (!note) {
       return NextResponse.json(
-        { error: 'Failed to update note' },
-        { status: 500 }
+        { error: 'Note not found after update' },
+        { status: 404 }
       );
     }
     
     return NextResponse.json(note);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating note:', error);
     return NextResponse.json(
-      { error: 'Failed to update note' },
+      { error: error?.message || 'Failed to update note' },
       { status: 500 }
     );
   }

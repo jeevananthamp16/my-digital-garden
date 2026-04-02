@@ -179,10 +179,13 @@ export async function updateNote(id: string, updates: Partial<Note>): Promise<No
       };
     }
 
-    await notionClient.pages.update({
-      page_id: id,
-      properties,
-    });
+    // Only update properties if there are any to update (excluding content)
+    if (Object.keys(properties).length > 0) {
+      await notionClient.pages.update({
+        page_id: id,
+        properties,
+      });
+    }
 
     // Update content if provided
     if (updates.content !== undefined) {
@@ -190,9 +193,10 @@ export async function updateNote(id: string, updates: Partial<Note>): Promise<No
     }
 
     return await getNote(id);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updating note:', error);
-    return null;
+    // Re-throw with details for the API to handle properly
+    throw new Error(`Failed to update note: ${error?.message || 'Unknown error'}`);
   }
 }
 
@@ -210,79 +214,150 @@ export async function deleteNote(id: string): Promise<boolean> {
   }
 }
 
+// Helper function to create rich_text array, chunking text >2000 chars (Notion limit)
+function createRichText(text: string): Array<{ type: 'text'; text: { content: string } }> {
+  const MAX_LENGTH = 2000;
+  const chunks: Array<{ type: 'text'; text: { content: string } }> = [];
+  
+  for (let i = 0; i < text.length; i += MAX_LENGTH) {
+    chunks.push({
+      type: 'text',
+      text: { content: text.slice(i, i + MAX_LENGTH) },
+    });
+  }
+  
+  return chunks.length > 0 ? chunks : [{ type: 'text', text: { content: '' } }];
+}
+
 // Helper function to update note content as blocks
 async function updateNoteContent(pageId: string, content: string) {
-  // First, delete existing blocks
-  const existingBlocks = await notionClient.blocks.children.list({ block_id: pageId });
-  for (const block of existingBlocks.results) {
-    await notionClient.blocks.delete({ block_id: block.id });
-  }
+  try {
+    // First, delete existing blocks
+    const existingBlocks = await notionClient.blocks.children.list({ block_id: pageId });
+    for (const block of existingBlocks.results) {
+      try {
+        await notionClient.blocks.delete({ block_id: block.id });
+      } catch (deleteError) {
+        console.warn('Failed to delete block:', block.id, deleteError);
+        // Continue even if a block fails to delete
+      }
+    }
 
-  // Parse markdown and create blocks
-  const lines = content.split('\n');
-  const blocks: any[] = [];
+    // Parse markdown and create blocks
+    const lines = content.split('\n');
+    const blocks: any[] = [];
+    let inCodeBlock = false;
+    let codeContent = '';
+    let codeLanguage = '';
 
-  for (const line of lines) {
-    if (!line.trim()) continue;
+    for (const line of lines) {
+      // Handle code blocks
+      if (line.startsWith('```')) {
+        if (!inCodeBlock) {
+          inCodeBlock = true;
+          codeLanguage = line.slice(3).trim() || 'plain text';
+          codeContent = '';
+        } else {
+          // End of code block
+          blocks.push({
+            object: 'block',
+            type: 'code',
+            code: {
+              rich_text: createRichText(codeContent),
+              language: codeLanguage,
+            },
+          });
+          inCodeBlock = false;
+          codeContent = '';
+          codeLanguage = '';
+        }
+        continue;
+      }
 
-    if (line.startsWith('# ')) {
+      if (inCodeBlock) {
+        codeContent += (codeContent ? '\n' : '') + line;
+        continue;
+      }
+
+      // Skip empty lines but preserve paragraph breaks
+      if (!line.trim()) continue;
+
+      const textContent = (text: string) => createRichText(text);
+
+      if (line.startsWith('# ')) {
+        blocks.push({
+          object: 'block',
+          type: 'heading_1',
+          heading_1: { rich_text: textContent(line.slice(2)) },
+        });
+      } else if (line.startsWith('## ')) {
+        blocks.push({
+          object: 'block',
+          type: 'heading_2',
+          heading_2: { rich_text: textContent(line.slice(3)) },
+        });
+      } else if (line.startsWith('### ')) {
+        blocks.push({
+          object: 'block',
+          type: 'heading_3',
+          heading_3: { rich_text: textContent(line.slice(4)) },
+        });
+      } else if (line.startsWith('- ') || line.startsWith('* ')) {
+        blocks.push({
+          object: 'block',
+          type: 'bulleted_list_item',
+          bulleted_list_item: { rich_text: textContent(line.slice(2)) },
+        });
+      } else if (/^\d+\.\s/.test(line)) {
+        blocks.push({
+          object: 'block',
+          type: 'numbered_list_item',
+          numbered_list_item: { rich_text: textContent(line.replace(/^\d+\.\s/, '')) },
+        });
+      } else if (line.startsWith('> ')) {
+        blocks.push({
+          object: 'block',
+          type: 'quote',
+          quote: { rich_text: textContent(line.slice(2)) },
+        });
+      } else if (line.startsWith('---') || line.startsWith('***')) {
+        blocks.push({
+          object: 'block',
+          type: 'divider',
+          divider: {},
+        });
+      } else {
+        blocks.push({
+          object: 'block',
+          type: 'paragraph',
+          paragraph: { rich_text: textContent(line) },
+        });
+      }
+    }
+
+    // Handle unclosed code block
+    if (inCodeBlock && codeContent) {
       blocks.push({
         object: 'block',
-        type: 'heading_1',
-        heading_1: {
-          rich_text: [{ type: 'text', text: { content: line.slice(2) } }],
-        },
-      });
-    } else if (line.startsWith('## ')) {
-      blocks.push({
-        object: 'block',
-        type: 'heading_2',
-        heading_2: {
-          rich_text: [{ type: 'text', text: { content: line.slice(3) } }],
-        },
-      });
-    } else if (line.startsWith('### ')) {
-      blocks.push({
-        object: 'block',
-        type: 'heading_3',
-        heading_3: {
-          rich_text: [{ type: 'text', text: { content: line.slice(4) } }],
-        },
-      });
-    } else if (line.startsWith('- ')) {
-      blocks.push({
-        object: 'block',
-        type: 'bulleted_list_item',
-        bulleted_list_item: {
-          rich_text: [{ type: 'text', text: { content: line.slice(2) } }],
-        },
-      });
-    } else if (line.startsWith('> ')) {
-      blocks.push({
-        object: 'block',
-        type: 'quote',
-        quote: {
-          rich_text: [{ type: 'text', text: { content: line.slice(2) } }],
-        },
-      });
-    } else {
-      blocks.push({
-        object: 'block',
-        type: 'paragraph',
-        paragraph: {
-          rich_text: [{ type: 'text', text: { content: line } }],
+        type: 'code',
+        code: {
+          rich_text: createRichText(codeContent),
+          language: codeLanguage || 'plain text',
         },
       });
     }
-  }
 
-  // Add blocks in chunks (Notion API limit is 100 blocks per request)
-  for (let i = 0; i < blocks.length; i += 100) {
-    const chunk = blocks.slice(i, i + 100);
-    await notionClient.blocks.children.append({
-      block_id: pageId,
-      children: chunk,
-    });
+    // Add blocks in chunks (Notion API limit is 100 blocks per request)
+    for (let i = 0; i < blocks.length; i += 100) {
+      const chunk = blocks.slice(i, i + 100);
+      await notionClient.blocks.children.append({
+        block_id: pageId,
+        children: chunk,
+      });
+    }
+  } catch (error: any) {
+    console.error('Error updating note content:', error);
+    throw new Error(`Failed to update content: ${error?.message || 'Unknown error'}`);
   }
 }
 
@@ -322,6 +397,133 @@ export async function getFolders(): Promise<string[]> {
   } catch (error) {
     console.error('Error fetching folders:', error);
     return ['Inbox'];
+  }
+}
+
+// Create a new folder (adds select option to Folder property)
+export async function createFolder(name: string): Promise<string | null> {
+  try {
+    // Get existing options
+    const response = await notionClient.databases.retrieve({ database_id: databaseId }) as any;
+    const existingOptions = response.properties.Folder?.select?.options || [];
+    
+    // Check if folder already exists
+    if (existingOptions.some((opt: any) => opt.name.toLowerCase() === name.toLowerCase())) {
+      throw new Error(`Folder "${name}" already exists`);
+    }
+    
+    // Add new option (Notion will merge with existing)
+    await notionClient.databases.update({
+      database_id: databaseId,
+      properties: {
+        Folder: {
+          select: {
+            options: [...existingOptions, { name }],
+          },
+        },
+      },
+    });
+    
+    return name;
+  } catch (error: any) {
+    console.error('Error creating folder:', error);
+    throw new Error(error?.message || 'Failed to create folder');
+  }
+}
+
+// Update a folder name (renames select option)
+export async function updateFolder(oldName: string, newName: string): Promise<string | null> {
+  try {
+    // Get existing options
+    const response = await notionClient.databases.retrieve({ database_id: databaseId }) as any;
+    const existingOptions = response.properties.Folder?.select?.options || [];
+    
+    // Find the folder to rename
+    const folderIndex = existingOptions.findIndex((opt: any) => opt.name === oldName);
+    if (folderIndex === -1) {
+      throw new Error(`Folder "${oldName}" not found`);
+    }
+    
+    // Check if new name already exists
+    if (existingOptions.some((opt: any) => opt.name.toLowerCase() === newName.toLowerCase() && opt.name !== oldName)) {
+      throw new Error(`Folder "${newName}" already exists`);
+    }
+    
+    // Update the option name (keep other properties like id and color)
+    const updatedOptions = existingOptions.map((opt: any) =>
+      opt.name === oldName ? { ...opt, name: newName } : opt
+    );
+    
+    await notionClient.databases.update({
+      database_id: databaseId,
+      properties: {
+        Folder: {
+          select: {
+            options: updatedOptions,
+          },
+        },
+      },
+    });
+    
+    return newName;
+  } catch (error: any) {
+    console.error('Error updating folder:', error);
+    throw new Error(error?.message || 'Failed to update folder');
+  }
+}
+
+// Delete a folder (removes select option, notes with this folder become "Inbox")
+export async function deleteFolder(name: string): Promise<boolean> {
+  try {
+    if (name.toLowerCase() === 'inbox') {
+      throw new Error('Cannot delete the default "Inbox" folder');
+    }
+    
+    // Get existing options
+    const response = await notionClient.databases.retrieve({ database_id: databaseId }) as any;
+    const existingOptions = response.properties.Folder?.select?.options || [];
+    
+    // Check if folder exists
+    if (!existingOptions.some((opt: any) => opt.name === name)) {
+      throw new Error(`Folder "${name}" not found`);
+    }
+    
+    // First, update all notes with this folder to "Inbox"
+    const notesInFolder = await notionClient.databases.query({
+      database_id: databaseId,
+      filter: {
+        property: 'Folder',
+        select: { equals: name },
+      },
+    });
+    
+    for (const page of notesInFolder.results) {
+      await notionClient.pages.update({
+        page_id: page.id,
+        properties: {
+          Folder: { select: { name: 'Inbox' } },
+        },
+      });
+    }
+    
+    // Remove the folder option
+    const updatedOptions = existingOptions.filter((opt: any) => opt.name !== name);
+    
+    await notionClient.databases.update({
+      database_id: databaseId,
+      properties: {
+        Folder: {
+          select: {
+            options: updatedOptions,
+          },
+        },
+      },
+    });
+    
+    return true;
+  } catch (error: any) {
+    console.error('Error deleting folder:', error);
+    throw new Error(error?.message || 'Failed to delete folder');
   }
 }
 
