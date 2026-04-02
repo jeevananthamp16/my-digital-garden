@@ -59,41 +59,13 @@ export async function getNote(id: string): Promise<Note | null> {
   try {
     const page = await notionClient.pages.retrieve({ page_id: id }) as any;
     
-    // Get page content (blocks)
-    const blocks = await notionClient.blocks.children.list({ block_id: id });
-    const content = blocks.results
-      .map((block: any) => {
-        if (block.type === 'paragraph') {
-          return block.paragraph.rich_text.map((t: any) => t.plain_text).join('');
-        }
-        if (block.type === 'heading_1') {
-          return `# ${block.heading_1.rich_text.map((t: any) => t.plain_text).join('')}`;
-        }
-        if (block.type === 'heading_2') {
-          return `## ${block.heading_2.rich_text.map((t: any) => t.plain_text).join('')}`;
-        }
-        if (block.type === 'heading_3') {
-          return `### ${block.heading_3.rich_text.map((t: any) => t.plain_text).join('')}`;
-        }
-        if (block.type === 'bulleted_list_item') {
-          return `- ${block.bulleted_list_item.rich_text.map((t: any) => t.plain_text).join('')}`;
-        }
-        if (block.type === 'numbered_list_item') {
-          return `1. ${block.numbered_list_item.rich_text.map((t: any) => t.plain_text).join('')}`;
-        }
-        if (block.type === 'code') {
-          return `\`\`\`${block.code.language}\n${block.code.rich_text.map((t: any) => t.plain_text).join('')}\n\`\`\``;
-        }
-        if (block.type === 'quote') {
-          return `> ${block.quote.rich_text.map((t: any) => t.plain_text).join('')}`;
-        }
-        return '';
-      })
-      .join('\n\n');
+    // Read content from Content property (rich_text can be chunked)
+    const contentRichText = page.properties.Content?.rich_text || [];
+    const content = contentRichText.map((t: any) => t.plain_text).join('');
 
     return {
       id: page.id,
-      title: page.properties.Title?.title?.[0]?.plain_text || 'Untitled',
+      title: page.properties.Name?.title?.[0]?.plain_text || 'Untitled',
       content,
       folder: page.properties.Folder?.select?.name || 'Inbox',
       tags: page.properties.Tags?.multi_select?.map((t: any) => t.name) || [],
@@ -105,112 +77,6 @@ export async function getNote(id: string): Promise<Note | null> {
   } catch (error) {
     console.error('Error fetching note:', error);
     return null;
-  }
-}
-
-// Create a new note
-export async function createNote(note: Partial<Note>): Promise<Note | null> {
-  try {
-    const response = await notionClient.pages.create({
-      parent: { database_id: databaseId },
-      properties: {
-        Name: {
-          title: [{ text: { content: note.title || 'Untitled' } }],
-        },
-        Folder: {
-          select: { name: note.folder || 'Inbox' },
-        },
-        Tags: {
-          multi_select: (note.tags || []).map((tag) => ({ name: tag })),
-        },
-        Public: {
-          checkbox: note.isPublic || false,
-        },
-      },
-    }) as any;
-
-    // Add content as blocks
-    if (note.content) {
-      await updateNoteContent(response.id, note.content);
-    }
-
-    return {
-      id: response.id,
-      title: note.title || 'Untitled',
-      content: note.content || '',
-      folder: note.folder || 'Inbox',
-      tags: note.tags || [],
-      isPublic: note.isPublic || false,
-      links: [],
-      createdAt: response.created_time,
-      updatedAt: response.last_edited_time,
-    };
-  } catch (error: any) {
-    console.error('Error creating note:', error);
-    console.error('Error details:', JSON.stringify(error, null, 2));
-    // Re-throw with more details for the API to catch
-    throw new Error(`Notion API Error: ${error?.message || error?.body?.message || 'Unknown error'}`);
-  }
-}
-
-// Update a note
-export async function updateNote(id: string, updates: Partial<Note>): Promise<Note | null> {
-  try {
-    const properties: any = {};
-
-    if (updates.title !== undefined) {
-      properties.Name = {
-        title: [{ text: { content: updates.title } }],
-      };
-    }
-    if (updates.folder !== undefined) {
-      properties.Folder = {
-        select: { name: updates.folder },
-      };
-    }
-    if (updates.tags !== undefined) {
-      properties.Tags = {
-        multi_select: updates.tags.map((tag) => ({ name: tag })),
-      };
-    }
-    if (updates.isPublic !== undefined) {
-      properties.Public = {
-        checkbox: updates.isPublic,
-      };
-    }
-
-    // Only update properties if there are any to update (excluding content)
-    if (Object.keys(properties).length > 0) {
-      await notionClient.pages.update({
-        page_id: id,
-        properties,
-      });
-    }
-
-    // Update content if provided
-    if (updates.content !== undefined) {
-      await updateNoteContent(id, updates.content);
-    }
-
-    return await getNote(id);
-  } catch (error: any) {
-    console.error('Error updating note:', error);
-    // Re-throw with details for the API to handle properly
-    throw new Error(`Failed to update note: ${error?.message || 'Unknown error'}`);
-  }
-}
-
-// Delete a note (archive in Notion)
-export async function deleteNote(id: string): Promise<boolean> {
-  try {
-    await notionClient.pages.update({
-      page_id: id,
-      archived: true,
-    });
-    return true;
-  } catch (error) {
-    console.error('Error deleting note:', error);
-    return false;
   }
 }
 
@@ -229,135 +95,105 @@ function createRichText(text: string): Array<{ type: 'text'; text: { content: st
   return chunks.length > 0 ? chunks : [{ type: 'text', text: { content: '' } }];
 }
 
-// Helper function to update note content as blocks
-async function updateNoteContent(pageId: string, content: string) {
+// Create a new note
+export async function createNote(note: Partial<Note>): Promise<Note | null> {
   try {
-    // First, delete existing blocks
-    const existingBlocks = await notionClient.blocks.children.list({ block_id: pageId });
-    for (const block of existingBlocks.results) {
-      try {
-        await notionClient.blocks.delete({ block_id: block.id });
-      } catch (deleteError) {
-        console.warn('Failed to delete block:', block.id, deleteError);
-        // Continue even if a block fails to delete
-      }
-    }
-
-    // Parse markdown and create blocks
-    const lines = content.split('\n');
-    const blocks: any[] = [];
-    let inCodeBlock = false;
-    let codeContent = '';
-    let codeLanguage = '';
-
-    for (const line of lines) {
-      // Handle code blocks
-      if (line.startsWith('```')) {
-        if (!inCodeBlock) {
-          inCodeBlock = true;
-          codeLanguage = line.slice(3).trim() || 'plain text';
-          codeContent = '';
-        } else {
-          // End of code block
-          blocks.push({
-            object: 'block',
-            type: 'code',
-            code: {
-              rich_text: createRichText(codeContent),
-              language: codeLanguage,
-            },
-          });
-          inCodeBlock = false;
-          codeContent = '';
-          codeLanguage = '';
-        }
-        continue;
-      }
-
-      if (inCodeBlock) {
-        codeContent += (codeContent ? '\n' : '') + line;
-        continue;
-      }
-
-      // Skip empty lines but preserve paragraph breaks
-      if (!line.trim()) continue;
-
-      const textContent = (text: string) => createRichText(text);
-
-      if (line.startsWith('# ')) {
-        blocks.push({
-          object: 'block',
-          type: 'heading_1',
-          heading_1: { rich_text: textContent(line.slice(2)) },
-        });
-      } else if (line.startsWith('## ')) {
-        blocks.push({
-          object: 'block',
-          type: 'heading_2',
-          heading_2: { rich_text: textContent(line.slice(3)) },
-        });
-      } else if (line.startsWith('### ')) {
-        blocks.push({
-          object: 'block',
-          type: 'heading_3',
-          heading_3: { rich_text: textContent(line.slice(4)) },
-        });
-      } else if (line.startsWith('- ') || line.startsWith('* ')) {
-        blocks.push({
-          object: 'block',
-          type: 'bulleted_list_item',
-          bulleted_list_item: { rich_text: textContent(line.slice(2)) },
-        });
-      } else if (/^\d+\.\s/.test(line)) {
-        blocks.push({
-          object: 'block',
-          type: 'numbered_list_item',
-          numbered_list_item: { rich_text: textContent(line.replace(/^\d+\.\s/, '')) },
-        });
-      } else if (line.startsWith('> ')) {
-        blocks.push({
-          object: 'block',
-          type: 'quote',
-          quote: { rich_text: textContent(line.slice(2)) },
-        });
-      } else if (line.startsWith('---') || line.startsWith('***')) {
-        blocks.push({
-          object: 'block',
-          type: 'divider',
-          divider: {},
-        });
-      } else {
-        blocks.push({
-          object: 'block',
-          type: 'paragraph',
-          paragraph: { rich_text: textContent(line) },
-        });
-      }
-    }
-
-    // Handle unclosed code block
-    if (inCodeBlock && codeContent) {
-      blocks.push({
-        object: 'block',
-        type: 'code',
-        code: {
-          rich_text: createRichText(codeContent),
-          language: codeLanguage || 'plain text',
+    const response = await notionClient.pages.create({
+      parent: { database_id: databaseId },
+      properties: {
+        Name: {
+          title: [{ text: { content: note.title || 'Untitled' } }],
         },
+        Content: {
+          rich_text: createRichText(note.content || ''),
+        },
+        Folder: {
+          select: { name: note.folder || 'Inbox' },
+        },
+        Tags: {
+          multi_select: (note.tags || []).map((tag) => ({ name: tag })),
+        },
+        Public: {
+          checkbox: note.isPublic || false,
+        },
+      },
+    }) as any;
+
+    return {
+      id: response.id,
+      title: note.title || 'Untitled',
+      content: note.content || '',
+      folder: note.folder || 'Inbox',
+      tags: note.tags || [],
+      isPublic: note.isPublic || false,
+      links: [],
+      createdAt: response.created_time,
+      updatedAt: response.last_edited_time,
+    };
+  } catch (error: any) {
+    console.error('Error creating note:', error);
+    console.error('Error details:', JSON.stringify(error, null, 2));
+    throw new Error(`Notion API Error: ${error?.message || error?.body?.message || 'Unknown error'}`);
+  }
+}
+
+// Update a note
+export async function updateNote(id: string, updates: Partial<Note>): Promise<Note | null> {
+  try {
+    const properties: any = {};
+
+    if (updates.title !== undefined) {
+      properties.Name = {
+        title: [{ text: { content: updates.title } }],
+      };
+    }
+    if (updates.content !== undefined) {
+      properties.Content = {
+        rich_text: createRichText(updates.content),
+      };
+    }
+    if (updates.folder !== undefined) {
+      properties.Folder = {
+        select: { name: updates.folder },
+      };
+    }
+    if (updates.tags !== undefined) {
+      properties.Tags = {
+        multi_select: updates.tags.map((tag) => ({ name: tag })),
+      };
+    }
+    if (updates.isPublic !== undefined) {
+      properties.Public = {
+        checkbox: updates.isPublic,
+      };
+    }
+
+    // Update properties in a single API call
+    if (Object.keys(properties).length > 0) {
+      await notionClient.pages.update({
+        page_id: id,
+        properties,
       });
     }
 
-    // Add blocks in chunks (Notion API limit is 100 blocks per request)
-    for (let i = 0; i < blocks.length; i += 100) {
-      const chunk = blocks.slice(i, i + 100);
-      await notionClient.blocks.children.append({
-        block_id: pageId,
-        children: chunk,
-      });
-    }
+    return await getNote(id);
   } catch (error: any) {
-    console.error('Error updating note content:', error);
-    throw new Error(`Failed to update content: ${error?.message || 'Unknown error'}`);
+    console.error('Error updating note:', error);
+    throw new Error(`Failed to update note: ${error?.message || 'Unknown error'}`);
+  }
+}
+
+// Delete a note (archive in Notion)
+export async function deleteNote(id: string): Promise<boolean> {
+  try {
+    await notionClient.pages.update({
+      page_id: id,
+      archived: true,
+    });
+    return true;
+  } catch (error) {
+    console.error('Error deleting note:', error);
+    return false;
   }
 }
 

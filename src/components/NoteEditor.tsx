@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Save,
@@ -13,6 +13,7 @@ import {
   Plus,
   Edit3,
   Eye,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { useNotesStore } from '@/lib/store';
 import { Note } from '@/lib/notion';
@@ -41,6 +42,7 @@ interface NoteEditorProps {
 export function NoteEditor({ folders, tags, onSave, onDelete }: NoteEditorProps) {
   const { getSelectedNote, isEditing, setIsEditing, updateNoteInStore } = useNotesStore();
   const note = getSelectedNote();
+  const editorRef = useRef<HTMLDivElement>(null);
   
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -51,6 +53,117 @@ export function NoteEditor({ folders, tags, onSave, onDelete }: NoteEditorProps)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [newTag, setNewTag] = useState('');
   const [showTagInput, setShowTagInput] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+
+  // Compress and convert image to base64
+  const compressImage = useCallback(async (file: File, maxWidth = 1200, quality = 0.8): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new window.Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          // Scale down if too large
+          if (width > maxWidth) {
+            height = (height * maxWidth) / width;
+            width = maxWidth;
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            reject(new Error('Could not get canvas context'));
+            return;
+          }
+          
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          resolve(dataUrl);
+        };
+        img.onerror = () => reject(new Error('Failed to load image'));
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  // Handle paste event for images
+  const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) continue;
+
+        setIsUploadingImage(true);
+        try {
+          // Compress large images
+          const maxSizeKB = 500;
+          let imageData: string;
+          
+          if (file.size > maxSizeKB * 1024) {
+            imageData = await compressImage(file, 1200, 0.7);
+          } else {
+            imageData = await compressImage(file, 1600, 0.85);
+          }
+          
+          // Insert markdown image at cursor position
+          const imageMarkdown = `\n![image](${imageData})\n`;
+          setContent(prev => prev + imageMarkdown);
+          
+          // Trigger auto-save
+          if (note && isEditing) {
+            debouncedSave({ content: content + imageMarkdown });
+          }
+        } catch (error) {
+          console.error('Failed to process image:', error);
+          alert('Failed to paste image. Please try again.');
+        } finally {
+          setIsUploadingImage(false);
+        }
+        break;
+      }
+    }
+  }, [note, isEditing, content, compressImage]);
+
+  // Handle drag and drop for images
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    if (!file.type.startsWith('image/')) return;
+
+    setIsUploadingImage(true);
+    try {
+      const imageData = await compressImage(file, 1200, 0.8);
+      const imageMarkdown = `\n![${file.name}](${imageData})\n`;
+      setContent(prev => prev + imageMarkdown);
+      
+      if (note && isEditing) {
+        debouncedSave({ content: content + imageMarkdown });
+      }
+    } catch (error) {
+      console.error('Failed to process dropped image:', error);
+      alert('Failed to add image. Please try again.');
+    } finally {
+      setIsUploadingImage(false);
+    }
+  }, [note, isEditing, content, compressImage]);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+  }, []);
 
   // Load note data when selection changes
   useEffect(() => {
@@ -221,7 +334,15 @@ export function NoteEditor({ folders, tags, onSave, onDelete }: NoteEditorProps)
             <span className="text-xs text-gray-500">Saving...</span>
           )}
           
-          {!isEditing ? (
+          {isEditing ? (
+            <button
+              onClick={handleSave}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm transition-colors"
+            >
+              <Save className="w-4 h-4" />
+              Save
+            </button>
+          ) : (
             <button
               onClick={() => setIsEditing(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
@@ -229,23 +350,16 @@ export function NoteEditor({ folders, tags, onSave, onDelete }: NoteEditorProps)
               <Edit3 className="w-4 h-4" />
               Edit
             </button>
-          ) : (
-            <>
-              <button
-                onClick={handleSave}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
-              >
-                <Save className="w-4 h-4" />
-                Save
-              </button>
-              <button
-                onClick={() => setShowDeleteConfirm(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-700 dark:text-red-300 rounded-lg text-sm transition-colors"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </>
           )}
+          
+          {/* Delete button - always visible */}
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-700 dark:text-red-300 rounded-lg text-sm transition-colors"
+            title="Delete note"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
@@ -349,15 +463,37 @@ export function NoteEditor({ folders, tags, onSave, onDelete }: NoteEditorProps)
       {/* Editor */}
       <div className="flex-1 overflow-hidden" data-color-mode="auto">
         {isEditing ? (
-          <MDEditor
-            value={content}
-            onChange={handleContentChange}
-            preview="live"
-            height="100%"
-            visibleDragbar={false}
-            hideToolbar={false}
-            className="!h-full !border-none"
-          />
+          <div 
+            ref={editorRef}
+            className="h-full relative"
+            onPaste={handlePaste}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+          >
+            {isUploadingImage && (
+              <div className="absolute inset-0 bg-black/20 flex items-center justify-center z-10">
+                <div className="bg-white dark:bg-gray-800 px-4 py-2 rounded-lg shadow-lg flex items-center gap-2">
+                  <ImageIcon className="w-4 h-4 animate-pulse" />
+                  <span>Processing image...</span>
+                </div>
+              </div>
+            )}
+            <MDEditor
+              value={content}
+              onChange={handleContentChange}
+              preview="edit"
+              height="100%"
+              visibleDragbar={false}
+              hideToolbar={false}
+              className="!h-full !border-none"
+              textareaProps={{
+                autoComplete: "off",
+                autoCorrect: "off",
+                autoCapitalize: "off",
+                spellCheck: false,
+              }}
+            />
+          </div>
         ) : (
           <div className="h-full overflow-y-auto p-6">
             <MarkdownPreview
