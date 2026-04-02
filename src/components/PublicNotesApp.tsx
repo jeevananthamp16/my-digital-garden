@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { Note } from '@/lib/notion';
 import MarkdownPreview from '@uiw/react-markdown-preview';
+import remarkBreaks from 'remark-breaks';
 
 // Dynamically import the graph component to avoid SSR issues
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
@@ -327,6 +328,7 @@ export default function PublicNotesApp() {
                   >
                     <MarkdownPreview
                       source={selectedNote.content}
+                      remarkPlugins={[remarkBreaks]}
                       style={{
                         backgroundColor: 'transparent',
                         color: 'inherit',

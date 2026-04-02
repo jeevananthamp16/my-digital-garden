@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import dynamic from 'next/dynamic';
+import remarkBreaks from 'remark-breaks';
 import {
   Save,
   Trash2,
@@ -519,6 +520,7 @@ export function NoteEditor({ folders, tags, onSave, onDelete }: NoteEditorProps)
           <div className="h-full overflow-y-auto p-6">
             <MarkdownPreview
               source={content}
+              remarkPlugins={[remarkBreaks]}
               className="prose dark:prose-invert max-w-none"
             />
           </div>
