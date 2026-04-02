@@ -67,24 +67,48 @@ export default function NotesApp() {
         }),
       });
       
-      const note = await response.json();
-      addNote(note);
+      const data = await response.json();
+      
+      if (!response.ok) {
+        console.error('Failed to create note:', data.error || data);
+        alert(`Failed to create note: ${data.error || 'Unknown error'}`);
+        return;
+      }
+      
+      if (!data.id) {
+        console.error('Note creation returned without ID:', data);
+        alert('Failed to create note: No ID returned');
+        return;
+      }
+      
+      addNote(data);
     } catch (error) {
       console.error('Error creating note:', error);
+      alert('Failed to create note. Check console for details.');
     }
   };
 
   // Save note
   const handleSave = async (updates: Partial<Note>) => {
     const selectedNote = useNotesStore.getState().getSelectedNote();
-    if (!selectedNote) return;
+    if (!selectedNote?.id) {
+      console.error('Cannot save: No note selected or note has no ID');
+      return;
+    }
     
     try {
-      await fetch(`/api/notes/${selectedNote.id}`, {
+      const response = await fetch(`/api/notes/${selectedNote.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        console.error('Failed to save note:', data.error || data);
+        throw new Error(data.error || 'Failed to save note');
+      }
+      
       updateNoteInStore(selectedNote.id, updates);
     } catch (error) {
       console.error('Error saving note:', error);
