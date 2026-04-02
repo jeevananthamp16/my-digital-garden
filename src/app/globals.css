@@ -1,0 +1,155 @@
+@import "tailwindcss";
+
+:root {
+  --background: 255 255 255;
+  --foreground: 15 23 42;
+}
+
+.dark {
+  --background: 3 7 18;
+  --foreground: 248 250 252;
+}
+
+* {
+  border-color: #e5e7eb;
+}
+
+.dark * {
+  border-color: #1f2937;
+}
+
+body {
+  background-color: #ffffff;
+  color: #111827;
+}
+
+.dark body {
+  background-color: #030712;
+  color: #f3f4f6;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Markdown editor customization */
+.w-md-editor {
+  --color-canvas-default: transparent !important;
+  --color-fg-default: inherit !important;
+  --color-border-default: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.dark .w-md-editor {
+  --color-fg-default: #f1f5f9 !important;
+}
+
+.w-md-editor-text-pre > code,
+.w-md-editor-text-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+  font-size: 14px !important;
+  line-height: 1.6 !important;
+}
+
+.w-md-editor-toolbar {
+  background-color: transparent !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  padding: 8px 4px !important;
+}
+
+.dark .w-md-editor-toolbar {
+  border-bottom-color: #1e293b !important;
+}
+
+.w-md-editor-toolbar li > button {
+  color: #64748b !important;
+}
+
+.dark .w-md-editor-toolbar li > button {
+  color: #94a3b8 !important;
+}
+
+.w-md-editor-toolbar li > button:hover {
+  color: #1e293b !important;
+  background-color: #f1f5f9 !important;
+}
+
+.dark .w-md-editor-toolbar li > button:hover {
+  color: #f1f5f9 !important;
+  background-color: #1e293b !important;
+}
+
+.w-md-editor-preview {
+  padding: 16px !important;
+}
+
+.w-md-editor-preview h1,
+.w-md-editor-preview h2,
+.w-md-editor-preview h3,
+.w-md-editor-preview h4,
+.w-md-editor-preview h5,
+.w-md-editor-preview h6 {
+  border-bottom: none !important;
+  margin-top: 1.5em !important;
+  margin-bottom: 0.5em !important;
+}
+
+.w-md-editor-preview a {
+  color: #3b82f6 !important;
+}
+
+.w-md-editor-preview code {
+  background-color: #f1f5f9 !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  font-size: 0.875em !important;
+}
+
+.dark .w-md-editor-preview code {
+  background-color: #1e293b !important;
+}
+
+.w-md-editor-preview pre {
+  background-color: #f8fafc !important;
+  border-radius: 8px !important;
+  padding: 16px !important;
+}
+
+.dark .w-md-editor-preview pre {
+  background-color: #0f172a !important;
+}
+
+.w-md-editor-preview blockquote {
+  border-left: 4px solid #3b82f6 !important;
+  padding-left: 16px !important;
+  margin-left: 0 !important;
+  color: #64748b !important;
+}
+
+.dark .w-md-editor-preview blockquote {
+  color: #94a3b8 !important;
+}
