@@ -8,14 +8,15 @@ const ALLOWED_ADMINS = process.env.ALLOWED_ADMIN_EMAILS?.split(',') || [];
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
     GitHub({
-      clientId: process.env.GITHUB_CLIENT_ID!,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+      clientId: process.env.AUTH_GITHUB_ID || process.env.GITHUB_CLIENT_ID!,
+      clientSecret: process.env.AUTH_GITHUB_SECRET || process.env.GITHUB_CLIENT_SECRET!,
     }),
     Google({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      clientId: process.env.AUTH_GOOGLE_ID || process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.AUTH_GOOGLE_SECRET || process.env.GOOGLE_CLIENT_SECRET!,
     }),
   ],
+  trustHost: true,
   callbacks: {
     authorized({ auth, request }) {
       const isAdminRoute = request.nextUrl.pathname.startsWith('/admin');
