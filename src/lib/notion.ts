@@ -111,6 +111,10 @@ export async function getNote(id: string): Promise<Note | null> {
 // Create a new note
 export async function createNote(note: Partial<Note>): Promise<Note | null> {
   try {
+    // Debug: Log env var status
+    console.log('NOTION_API_KEY exists:', !!process.env.NOTION_API_KEY);
+    console.log('NOTION_DATABASE_ID:', databaseId);
+    
     const response = await notionClient.pages.create({
       parent: { database_id: databaseId },
       properties: {
@@ -145,9 +149,11 @@ export async function createNote(note: Partial<Note>): Promise<Note | null> {
       createdAt: response.created_time,
       updatedAt: response.last_edited_time,
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating note:', error);
-    return null;
+    console.error('Error details:', JSON.stringify(error, null, 2));
+    // Re-throw with more details for the API to catch
+    throw new Error(`Notion API Error: ${error?.message || error?.body?.message || 'Unknown error'}`);
   }
 }
 

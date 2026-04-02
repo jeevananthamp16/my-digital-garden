@@ -31,16 +31,17 @@ export async function POST(request: Request) {
     
     if (!note) {
       return NextResponse.json(
-        { error: 'Failed to create note' },
+        { error: 'Failed to create note - null response' },
         { status: 500 }
       );
     }
     
     return NextResponse.json(note, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating note:', error);
+    // Return the actual error message for debugging
     return NextResponse.json(
-      { error: 'Failed to create note' },
+      { error: error?.message || 'Failed to create note', details: String(error) },
       { status: 500 }
     );
   }
