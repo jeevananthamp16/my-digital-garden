@@ -111,26 +111,22 @@ export async function getNote(id: string): Promise<Note | null> {
 // Create a new note
 export async function createNote(note: Partial<Note>): Promise<Note | null> {
   try {
-    // Debug: Log env var status
-    console.log('NOTION_API_KEY exists:', !!process.env.NOTION_API_KEY);
-    console.log('NOTION_DATABASE_ID:', databaseId);
+    // Build properties object with only required fields
+    // Tags, Folder, Public are optional - only add if they exist in DB
+    const properties: Record<string, any> = {
+      Name: {
+        title: [{ text: { content: note.title || 'Untitled' } }],
+      },
+    };
+
+    // Note: Add these back once you create the properties in Notion:
+    // - "Folder" (select)
+    // - "Tags" (multi_select)  
+    // - "Public" (checkbox)
     
     const response = await notionClient.pages.create({
       parent: { database_id: databaseId },
-      properties: {
-        Name: {
-          title: [{ text: { content: note.title || 'Untitled' } }],
-        },
-        Folder: {
-          select: { name: note.folder || 'Inbox' },
-        },
-        Tags: {
-          multi_select: (note.tags || []).map((tag) => ({ name: tag })),
-        },
-        Public: {
-          checkbox: note.isPublic || false,
-        },
-      },
+      properties,
     }) as any;
 
     // Add content as blocks
@@ -167,6 +163,13 @@ export async function updateNote(id: string, updates: Partial<Note>): Promise<No
         title: [{ text: { content: updates.title } }],
       };
     }
+    // Note: These properties don't exist in the current Notion database
+    // Uncomment once you add them to your Notion database:
+    // - "Folder" (select)
+    // - "Tags" (multi_select)  
+    // - "Public" (checkbox)
+    // - "Links" (relation to same DB)
+    /*
     if (updates.folder !== undefined) {
       properties.Folder = {
         select: { name: updates.folder },
@@ -187,6 +190,7 @@ export async function updateNote(id: string, updates: Partial<Note>): Promise<No
         relation: updates.links.map((linkId) => ({ id: linkId })),
       };
     }
+    */
 
     await notionClient.pages.update({
       page_id: id,
