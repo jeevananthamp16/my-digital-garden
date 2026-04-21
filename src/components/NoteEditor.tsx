@@ -381,6 +381,7 @@ export function NoteEditor({ folders, tags, onSave, onDelete }: NoteEditorProps)
             title="Delete note"
           >
             <Trash2 className="w-4 h-4" />
+            Delete
           </button>
         </div>
       </div>
@@ -513,6 +514,7 @@ export function NoteEditor({ folders, tags, onSave, onDelete }: NoteEditorProps)
                 autoCorrect: "off",
                 autoCapitalize: "off",
                 spellCheck: false,
+                onPaste: handlePaste as unknown as React.ClipboardEventHandler<HTMLTextAreaElement>,
               }}
             />
           </div>

@@ -244,14 +244,14 @@ export default function PublicNotesApp() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex">
+      <div className="flex-1 flex min-h-0">
         {activeView === 'list' ? (
           <>
             {/* Notes List */}
             <div
               className={`w-72 flex-shrink-0 border-r ${
                 theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
-              } overflow-y-auto`}
+              } overflow-y-auto min-h-0`}
             >
               <div className="p-3 border-b border-gray-700">
                 <h2 className="text-sm font-semibold text-gray-400">
@@ -295,9 +295,9 @@ export default function PublicNotesApp() {
             </div>
 
             {/* Note Content (Read-only) */}
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto min-h-0">
               {selectedNote ? (
-                <div className="p-6 max-w-4xl mx-auto">
+                <div className="p-6 max-w-4xl mx-auto pb-20">
                   <div className="mb-6">
                     <h1 className="text-3xl font-bold mb-3">
                       {selectedNote.title}
