@@ -105,7 +105,7 @@ export default function PublicNotesApp() {
 
   return (
     <div
-      className={`h-screen flex ${
+      className={`h-screen flex overflow-hidden ${
         theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'
       }`}
     >
@@ -244,7 +244,7 @@ export default function PublicNotesApp() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex min-h-0">
+      <div className="flex-1 flex min-h-0 h-full overflow-hidden">
         {activeView === 'list' ? (
           <>
             {/* Notes List */}
@@ -295,7 +295,7 @@ export default function PublicNotesApp() {
             </div>
 
             {/* Note Content (Read-only) */}
-            <div className="flex-1 overflow-y-auto min-h-0">
+            <div className="flex-1 overflow-y-auto min-h-0 h-full">
               {selectedNote ? (
                 <div className="p-6 max-w-4xl mx-auto pb-20">
                   <div className="mb-6">
