@@ -111,7 +111,7 @@ export default function PublicNotesApp() {
     >
       {/* Sidebar */}
       <div
-        className={`w-64 flex-shrink-0 ${
+        className={`w-64 flex-shrink-0 min-h-0 overflow-y-auto ${
           theme === 'dark'
             ? 'bg-gray-800 border-gray-700'
             : 'bg-gray-100 border-gray-200'
